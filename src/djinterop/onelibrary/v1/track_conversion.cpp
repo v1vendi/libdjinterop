@@ -19,7 +19,8 @@
 
 #include <algorithm>
 #include <cctype>
-#include <cstring>
+#include <string_view>
+
 namespace djinterop::onelibrary::v1
 {
 namespace
@@ -78,14 +79,13 @@ std::optional<musical_key> parse_musical_key(const std::string& name)
 
     // Step over an accidental if one is next.  The ASCII and typographic
     // spellings mean the same thing and differ only in how many bytes they
-    // occupy, which `strlen` rather than a literal count keeps right.
-    const auto consume = [&](const char* accidental)
+    // occupy.
+    const auto consume = [&](std::string_view accidental)
     {
-        const auto length = std::strlen(accidental);
-        if (name.compare(position, length, accidental) != 0)
+        if (name.compare(position, accidental.size(), accidental) != 0)
             return false;
 
-        position += length;
+        position += accidental.size();
         return true;
     };
 

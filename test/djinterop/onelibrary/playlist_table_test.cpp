@@ -18,23 +18,18 @@
 #define BOOST_TEST_MODULE onelibrary_playlist_table_test
 #include <boost/test/included/unit_test.hpp>
 
-#include <memory>
 #include <string>
 
-#include <sqlite_modern_cpp.h>
-
-#include "../../../src/djinterop/onelibrary/onelibrary_context.hpp"
 #include <djinterop/onelibrary/v1/playlist_table.hpp>
+
 #include "../boost_test_printable.hpp"
-#include "onelibrary_schema.hpp"
+#include "onelibrary_fixture.hpp"
 
 namespace utf = boost::unit_test;
-namespace ol = djinterop::onelibrary;
-namespace olv1 = djinterop::onelibrary::v1;
 
 namespace
 {
-/// Build a context over an in-memory database holding a tree of playlists.
+/// A device holding a tree of playlists, built once for the whole module.
 ///
 ///     Sets                 (no parent recorded)
 ///      +- Warm Up          (sequence 1)
@@ -43,24 +38,24 @@ namespace
 ///     Practice             (parent of zero, which means the same as none)
 ///
 /// The two spellings of a root are both present, as rekordbox writes both.
-std::shared_ptr<ol::onelibrary_context> make_context()
+const onelibrary_device& device()
 {
-    sqlite::database db{":memory:"};
-    create_onelibrary_schema(db.connection().get());
+    static const onelibrary_device instance{{
+        "INSERT INTO playlist (playlist_id, sequenceNo, name, "
+        "playlist_id_parent) VALUES (1, 1, 'Sets', NULL), "
+        "(2, 1, 'Warm Up', 1), (3, 2, 'Cool Down', 1), "
+        "(4, 1, 'Peak Time', 2), (5, 2, 'Practice', 0);",
 
-    db << "INSERT INTO playlist (playlist_id, sequenceNo, name, "
-          "playlist_id_parent) VALUES (1, 1, 'Sets', NULL), "
-          "(2, 1, 'Warm Up', 1), (3, 2, 'Cool Down', 1), "
-          "(4, 1, 'Peak Time', 2), (5, 2, 'Practice', 0)";
+        "INSERT INTO content (content_id, title) VALUES (10, 'Alpha'), "
+        "(11, 'Beta'), (12, 'Gamma');",
 
-    db << "INSERT INTO content (content_id, title) VALUES (10, 'Alpha'), "
-          "(11, 'Beta'), (12, 'Gamma')";
+        // The second track of `Warm Up` is the one that `Peak Time` also
+        // holds.
+        "INSERT INTO playlist_content VALUES (2, 11, 1), (2, 10, 2), "
+        "(4, 10, 1);",
+    }};
 
-    // The second track of `Warm Up` is the one that `Peak Time` also holds.
-    db << "INSERT INTO playlist_content VALUES (2, 11, 1), (2, 10, 2), "
-          "(4, 10, 1)";
-
-    return std::make_shared<ol::onelibrary_context>("/device", std::move(db));
+    return instance;
 }
 
 }  // anonymous namespace
@@ -69,7 +64,7 @@ BOOST_TEST_DECORATOR(*utf::description("get() reads one row of the tree"))
 BOOST_AUTO_TEST_CASE(get__a_child__reads_its_row)
 {
     // Arrange
-    const olv1::playlist_table playlists{make_context()};
+    const auto playlists = device().library.playlist();
 
     // Act
     const auto row = playlists.get(2);
@@ -88,7 +83,7 @@ BOOST_TEST_DECORATOR(
 BOOST_AUTO_TEST_CASE(get__a_parent_of_zero__reads_as_no_parent)
 {
     // Arrange
-    const olv1::playlist_table playlists{make_context()};
+    const auto playlists = device().library.playlist();
 
     // Act
     const auto row = playlists.get(5);
@@ -102,7 +97,7 @@ BOOST_TEST_DECORATOR(*utf::description("get() for a row that is not there"))
 BOOST_AUTO_TEST_CASE(get__an_unknown_playlist__is_absent)
 {
     // Arrange
-    const olv1::playlist_table playlists{make_context()};
+    const auto playlists = device().library.playlist();
 
     // Act / Assert
     BOOST_CHECK(!playlists.get(404));
@@ -115,7 +110,7 @@ BOOST_TEST_DECORATOR(
 BOOST_AUTO_TEST_CASE(root_ids__both_spellings__are_roots)
 {
     // Arrange
-    const olv1::playlist_table playlists{make_context()};
+    const auto playlists = device().library.playlist();
 
     // Act
     const auto ids = playlists.root_ids();
@@ -130,7 +125,7 @@ BOOST_TEST_DECORATOR(*utf::description("child_ids() is in sibling order"))
 BOOST_AUTO_TEST_CASE(child_ids__several_siblings__are_in_sequence)
 {
     // Arrange
-    const olv1::playlist_table playlists{make_context()};
+    const auto playlists = device().library.playlist();
 
     // Act
     const auto ids = playlists.child_ids(1);
@@ -145,7 +140,7 @@ BOOST_TEST_DECORATOR(*utf::description("descendant_ids() is breadth first"))
 BOOST_AUTO_TEST_CASE(descendant_ids__a_deep_tree__is_breadth_first)
 {
     // Arrange
-    const olv1::playlist_table playlists{make_context()};
+    const auto playlists = device().library.playlist();
 
     // Act
     const auto ids = playlists.descendant_ids(1);
@@ -162,7 +157,7 @@ BOOST_TEST_DECORATOR(
 BOOST_AUTO_TEST_CASE(find__a_known_name__is_found_at_its_own_level)
 {
     // Arrange
-    const olv1::playlist_table playlists{make_context()};
+    const auto playlists = device().library.playlist();
 
     // Act / Assert
     BOOST_CHECK(playlists.find_root("Sets") == 1);
@@ -177,7 +172,7 @@ BOOST_TEST_DECORATOR(*utf::description("track_ids() is in playlist order"))
 BOOST_AUTO_TEST_CASE(track_ids__a_populated_playlist__is_in_order)
 {
     // Arrange
-    const olv1::playlist_table playlists{make_context()};
+    const auto playlists = device().library.playlist();
 
     // Act
     const auto ids = playlists.track_ids(2);
@@ -193,7 +188,7 @@ BOOST_TEST_DECORATOR(
 BOOST_AUTO_TEST_CASE(playlists_containing__a_shared_track__finds_each_holder)
 {
     // Arrange
-    const olv1::playlist_table playlists{make_context()};
+    const auto playlists = device().library.playlist();
 
     // Act
     const auto holders = playlists.playlists_containing(10);
@@ -205,4 +200,23 @@ BOOST_AUTO_TEST_CASE(playlists_containing__a_shared_track__finds_each_holder)
 
     // A track in no playlist at all is held by nothing.
     BOOST_CHECK(playlists.playlists_containing(12).empty());
+}
+
+BOOST_TEST_DECORATOR(
+    *utf::description("descendant_ids() terminates on a tree with a cycle"))
+BOOST_AUTO_TEST_CASE(descendant_ids__a_cycle__terminates)
+{
+    // Arrange: nothing in the schema stops a playlist being its own ancestor.
+    const onelibrary_device cyclic{{
+        "INSERT INTO playlist (playlist_id, sequenceNo, name, "
+        "playlist_id_parent) VALUES (1, 1, 'One', 2), (2, 1, 'Two', 1);",
+    }};
+    const auto playlists = cyclic.library.playlist();
+
+    // Act
+    const auto ids = playlists.descendant_ids(1);
+
+    // Assert
+    BOOST_REQUIRE(!ids.empty());
+    BOOST_CHECK_EQUAL(ids[0], 2);
 }

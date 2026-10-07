@@ -83,6 +83,10 @@ add_library(
     include/djinterop/exceptions.hpp
     include/djinterop/musical_key.hpp
     include/djinterop/onelibrary/onelibrary.hpp
+    include/djinterop/onelibrary/v1/content_table.hpp
+    include/djinterop/onelibrary/v1/library.hpp
+    include/djinterop/onelibrary/v1/playlist_table.hpp
+    include/djinterop/onelibrary/v1/property_table.hpp
     include/djinterop/pad_color.hpp
     include/djinterop/performance_data.hpp
     include/djinterop/playlist.hpp
@@ -512,28 +516,12 @@ if (Boost_FOUND AND Boost_filesystem_FOUND AND Boost_system_FOUND)
     add_djinterop_test(engine/v3/ performance_data_table_test)
     add_djinterop_test(engine/v3/ track_table_test)
 
-    # The OneLibrary tests talk to SQLite directly to build their fixtures, and
-    # the library's own copy is hidden from them, so they link the SQLCipher
-    # static library themselves.  For the same reason, they compile the
-    # internal sources they test into themselves rather than linking.
+    # The OneLibrary tests create encrypted databases, which only a build with
+    # SQLCipher can do.
     if(EXPERIMENTAL_ENABLE_SQLCIPHER)
         add_djinterop_test(onelibrary/ content_table_test)
-        target_sources(onelibrary_content_table_test PRIVATE
-                src/djinterop/onelibrary/v1/content_table.cpp
-                src/djinterop/onelibrary/v1/track_conversion.cpp)
-
         add_djinterop_test(onelibrary/ database_test)
-
         add_djinterop_test(onelibrary/ playlist_table_test)
-        target_sources(onelibrary_playlist_table_test PRIVATE
-                src/djinterop/onelibrary/v1/playlist_table.cpp)
-
-        foreach(test_name content_table_test database_test playlist_table_test)
-            target_link_libraries(onelibrary_${test_name} PRIVATE sqlcipher)
-            # The library sources compiled in need the headers they include.
-            target_include_directories(onelibrary_${test_name} PRIVATE SYSTEM
-                    $<TARGET_PROPERTY:DjInterop,INCLUDE_DIRECTORIES>)
-        endforeach()
     else()
         message(
             STATUS

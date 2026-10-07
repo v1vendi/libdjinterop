@@ -16,8 +16,6 @@
  */
 
 #pragma once
-#ifndef DJINTEROP_ONELIBRARY_V1_PLAYLIST_TABLE_HPP
-#define DJINTEROP_ONELIBRARY_V1_PLAYLIST_TABLE_HPP
 
 #include <cstdint>
 #include <memory>
@@ -33,10 +31,20 @@ struct onelibrary_context;
 
 namespace v1
 {
+/// Special value for id to indicate that a given row is not a row of the
+/// database.  Every row read from a device carries a real identifier, so this
+/// is only ever the value a default-constructed row holds.
+constexpr int64_t PLAYLIST_ROW_ID_NONE = 0;
+
+/// Special value for the `playlist_id_parent` column that indicates that a
+/// playlist has no parent.  rekordbox also leaves the column unset to mean the
+/// same thing.
+constexpr int64_t PARENT_ID_NONE = 0;
+
 /// One row of the `playlist` table.
 struct playlist_row
 {
-    int64_t id = 0;
+    int64_t id = PLAYLIST_ROW_ID_NONE;
     std::string name;
 
     /// The playlist this one sits under, or no value for a root.
@@ -86,5 +94,3 @@ private:
 
 }  // namespace v1
 }  // namespace djinterop::onelibrary
-
-#endif  // DJINTEROP_ONELIBRARY_V1_PLAYLIST_TABLE_HPP

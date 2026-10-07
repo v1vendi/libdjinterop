@@ -38,4 +38,11 @@ namespace djinterop::util
 [[nodiscard]] sqlite::database open_encrypted_database(
     const std::string& path, const std::string& passphrase);
 
+/// Create a SQLCipher database, open for writing.
+///
+/// \throws djinterop::unsupported_database If this build cannot create
+///         encrypted databases, or the file cannot be created.
+[[nodiscard]] sqlite::database create_encrypted_database(
+    const std::string& path, const std::string& passphrase);
+
 }  // namespace djinterop::util

@@ -16,8 +16,6 @@
  */
 
 #pragma once
-#ifndef DJINTEROP_ONELIBRARY_V1_LIBRARY_HPP
-#define DJINTEROP_ONELIBRARY_V1_LIBRARY_HPP
 
 #include <memory>
 #include <string>
@@ -42,9 +40,34 @@ namespace djinterop::onelibrary::v1
 class DJINTEROP_PUBLIC library
 {
 public:
+    /// Construct an instance of the class using a OneLibrary context.
+    ///
+    /// \param context OneLibrary context.
+    explicit library(std::shared_ptr<onelibrary_context> context);
+
+    /// Test whether a OneLibrary database exists in a given location.
+    ///
+    /// \param path Either the root directory of a device, or the database
+    ///             file.
+    [[nodiscard]] static bool exists(const std::string& path);
+
     /// Load the database on a device, as `load_database` does.
-    explicit library(
+    ///
+    /// \param path Either the root directory of a device, or the database
+    ///             file.
+    /// \param passphrase Passphrase with which the database is encrypted.
+    [[nodiscard]] static library load(
         const std::string& path,
+        const std::string& passphrase = default_passphrase);
+
+    /// Create a new database from an SQL script, as
+    /// `create_database_from_scripts` does, and load it.
+    ///
+    /// \param directory Root directory of the device to create.
+    /// \param script_directory Directory containing `exportLibrary.db.sql`.
+    /// \param passphrase Passphrase with which to encrypt the database.
+    [[nodiscard]] static library create_from_scripts(
+        const std::string& directory, const std::string& script_directory,
         const std::string& passphrase = default_passphrase);
 
     /// The `content` table.
@@ -68,5 +91,3 @@ private:
 };
 
 }  // namespace djinterop::onelibrary::v1
-
-#endif  // DJINTEROP_ONELIBRARY_V1_LIBRARY_HPP

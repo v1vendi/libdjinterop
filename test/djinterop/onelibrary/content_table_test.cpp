@@ -19,55 +19,43 @@
 #include <boost/test/included/unit_test.hpp>
 
 #include <chrono>
-#include <memory>
 #include <string>
 
-#include <sqlite_modern_cpp.h>
-
-#include <djinterop/musical_key.hpp>
-
 #include <djinterop/onelibrary/v1/content_table.hpp>
-#include "../../../src/djinterop/onelibrary/onelibrary_context.hpp"
-#include "../../../src/djinterop/onelibrary/v1/track_conversion.hpp"
+
 #include "../boost_test_printable.hpp"
-#include "onelibrary_schema.hpp"
+#include "onelibrary_fixture.hpp"
 
 namespace utf = boost::unit_test;
-namespace ol = djinterop::onelibrary;
-namespace olv1 = djinterop::onelibrary::v1;
 
 namespace
 {
-/// Build a context over an in-memory database holding a small library.
-///
-/// The tables are read directly here, with no encryption in the way, which
-/// keeps these tests clear of the deliberately expensive key derivation that
-/// a real database needs.
-std::shared_ptr<ol::onelibrary_context> make_context()
+/// A device holding a small library, built once for the whole module.
+const onelibrary_device& device()
 {
-    sqlite::database db{":memory:"};
-    create_onelibrary_schema(db.connection().get());
+    static const onelibrary_device instance{{
+        "INSERT INTO artist VALUES (1, 'Aphex Twin', ''), "
+        "(2, 'Squarepusher', '');",
+        "INSERT INTO album VALUES (1, 'Selected Ambient', 1, 0, 0, '');",
+        "INSERT INTO genre VALUES (1, 'Electro');",
+        "INSERT INTO label VALUES (1, 'Warp');",
+        R"(INSERT INTO "key" VALUES (1, 'F#m'), (2, 'Camelot 8A');)",
 
-    db << "INSERT INTO artist VALUES (1, 'Aphex Twin', ''), "
-          "(2, 'Squarepusher', '')";
-    db << "INSERT INTO album VALUES (1, 'Selected Ambient', 1, 0, 0, '')";
-    db << "INSERT INTO genre VALUES (1, 'Electro')";
-    db << "INSERT INTO label VALUES (1, 'Warp')";
-    db << R"(INSERT INTO "key" VALUES (1, 'F#m'), (2, 'Camelot 8A'))";
+        // A fully populated track.
+        "INSERT INTO content (content_id, title, bpmx100, length, trackNo, "
+        "artist_id_artist, artist_id_composer, album_id, genre_id, "
+        "label_id, key_id, djComment, rating, releaseYear, path, fileName, "
+        "fileSize, bitrate, samplingRate) VALUES (1, 'Alpha Track', 12400, "
+        "391, 7, 1, 2, 1, 1, 1, 1, 'feelin good', 4, 2025, "
+        "'/Contents/Aphex/alpha.mp3', 'alpha.mp3', 6580703, 320, 44100);",
 
-    // A fully populated track.
-    db << "INSERT INTO content (content_id, title, bpmx100, length, trackNo, "
-          "artist_id_artist, artist_id_composer, album_id, genre_id, "
-          "label_id, key_id, djComment, rating, releaseYear, path, fileName, "
-          "fileSize, bitrate, samplingRate) VALUES (1, 'Alpha Track', 12400, "
-          "391, 7, 1, 2, 1, 1, 1, 1, 'feelin good', 4, 2025, "
-          "'/Contents/Aphex/alpha.mp3', 'alpha.mp3', 6580703, 320, 44100)";
+        // Metadata that is present but empty, and a key notation not
+        // understood.
+        "INSERT INTO content (content_id, title, djComment, key_id, path) "
+        "VALUES (2, 'Beta Track', '', 2, '/Contents/Various/beta.flac');",
+    }};
 
-    // Metadata that is present but empty, and a key notation not understood.
-    db << "INSERT INTO content (content_id, title, djComment, key_id, path) "
-          "VALUES (2, 'Beta Track', '', 2, '/Contents/Various/beta.flac')";
-
-    return std::make_shared<ol::onelibrary_context>("/device", std::move(db));
+    return instance;
 }
 
 }  // anonymous namespace
@@ -76,7 +64,7 @@ BOOST_TEST_DECORATOR(*utf::description("get() resolves the lookup tables"))
 BOOST_AUTO_TEST_CASE(get__a_populated_row__resolves_its_lookups)
 {
     // Arrange
-    const olv1::content_table content{make_context()};
+    const auto content = device().library.content();
 
     // Act
     const auto row = content.get(1);
@@ -100,7 +88,7 @@ BOOST_TEST_DECORATOR(*utf::description("get() reads an empty column as absent"))
 BOOST_AUTO_TEST_CASE(get__an_empty_column__reads_as_absent)
 {
     // Arrange
-    const olv1::content_table content{make_context()};
+    const auto content = device().library.content();
 
     // Act
     const auto row = content.get(2);
@@ -116,7 +104,7 @@ BOOST_TEST_DECORATOR(*utf::description("get() for a row that is not there"))
 BOOST_AUTO_TEST_CASE(get__an_unknown_row__is_absent)
 {
     // Arrange
-    const olv1::content_table content{make_context()};
+    const auto content = device().library.content();
 
     // Act
     const auto row = content.get(404);
@@ -129,7 +117,7 @@ BOOST_TEST_DECORATOR(*utf::description("all_ids() is ordered by identifier"))
 BOOST_AUTO_TEST_CASE(all_ids__a_populated_table__is_ordered)
 {
     // Arrange
-    const olv1::content_table content{make_context()};
+    const auto content = device().library.content();
 
     // Act
     const auto ids = content.all_ids();
@@ -145,7 +133,7 @@ BOOST_TEST_DECORATOR(
 BOOST_AUTO_TEST_CASE(ids_by_path__either_spelling__finds_the_row)
 {
     // Arrange
-    const olv1::content_table content{make_context()};
+    const auto content = device().library.content();
 
     // Act
     const auto absolute = content.ids_by_path("/Contents/Aphex/alpha.mp3");
@@ -161,7 +149,7 @@ BOOST_TEST_DECORATOR(*utf::description("exists() for present and absent rows"))
 BOOST_AUTO_TEST_CASE(exists__present_and_absent_rows__reports_each)
 {
     // Arrange
-    const olv1::content_table content{make_context()};
+    const auto content = device().library.content();
 
     // Act / Assert
     BOOST_CHECK(content.exists(1));
@@ -169,81 +157,29 @@ BOOST_AUTO_TEST_CASE(exists__present_and_absent_rows__reports_each)
 }
 
 BOOST_TEST_DECORATOR(
-    *utf::description("to_snapshot() converts the units of the format"))
-BOOST_AUTO_TEST_CASE(to_snapshot__a_populated_row__converts_its_units)
+    *utf::description("get_xxx() reads one column the same as get() does"))
+BOOST_AUTO_TEST_CASE(get_column__a_populated_row__matches_the_whole_row)
 {
     // Arrange
-    const olv1::content_table content{make_context()};
-    const auto row = content.get(1);
-    BOOST_REQUIRE(row);
+    const auto content = device().library.content();
 
     // Act
-    const auto snapshot = olv1::to_snapshot(*row);
+    const auto row = content.get(1);
 
     // Assert
-    BOOST_CHECK_CLOSE(snapshot.bpm.value(), 124.0, 0.001);
-    BOOST_CHECK_EQUAL(snapshot.duration.value().count(), 391000);
-
-    // Ratings are whole stars in the database, and out of one hundred here.
-    BOOST_CHECK_EQUAL(snapshot.rating.value(), 80);
-
-    // Paths are absolute within the device, and relative to it here.
-    BOOST_CHECK_EQUAL(
-        snapshot.relative_path.value(), "Contents/Aphex/alpha.mp3");
-
-    // No sample count is recorded, so it follows from the duration and rate.
-    BOOST_CHECK_EQUAL(snapshot.sample_count.value(), 391 * 44100);
-    BOOST_CHECK_EQUAL(snapshot.publisher.value(), "Warp");
-    BOOST_CHECK(snapshot.key == djinterop::musical_key::f_sharp_minor);
-}
-
-BOOST_TEST_DECORATOR(
-    *utf::description("to_snapshot() for data the database does not hold"))
-BOOST_AUTO_TEST_CASE(to_snapshot__any_row__has_no_performance_data)
-{
-    // Arrange
-    const olv1::content_table content{make_context()};
-    const auto row = content.get(1);
     BOOST_REQUIRE(row);
+    BOOST_CHECK(content.get_title(1) == row->title);
+    BOOST_CHECK(content.get_artist(1) == row->artist);
+    BOOST_CHECK(content.get_composer(1) == row->composer);
+    BOOST_CHECK(content.get_album(1) == row->album);
+    BOOST_CHECK(content.get_label(1) == row->label);
+    BOOST_CHECK(content.get_length(1) == row->length);
+    BOOST_CHECK(content.get_rating_stars(1) == row->rating_stars);
+    BOOST_CHECK(content.get_file_size(1) == row->file_size);
+    BOOST_CHECK(content.get_bitrate(1) == row->bitrate);
+    BOOST_CHECK(content.get_sampling_rate(1) == row->sampling_rate);
 
-    // Act
-    const auto snapshot = olv1::to_snapshot(*row);
-
-    // Assert: rekordbox leaves these in the ANLZ files beside the database.
-    BOOST_CHECK(snapshot.beatgrid.empty());
-    BOOST_CHECK(snapshot.waveform.empty());
-    BOOST_CHECK(snapshot.hot_cues.empty());
-    BOOST_CHECK(snapshot.loops.empty());
-}
-
-BOOST_TEST_DECORATOR(
-    *utf::description("parse_musical_key() for the notations rekordbox uses"))
-BOOST_AUTO_TEST_CASE(parse_musical_key__known_notations__are_understood)
-{
-    // Act / Assert
-    BOOST_CHECK(olv1::parse_musical_key("C") == djinterop::musical_key::c_major);
-    BOOST_CHECK(olv1::parse_musical_key("Am") == djinterop::musical_key::a_minor);
-    BOOST_CHECK(
-        olv1::parse_musical_key("F#m") == djinterop::musical_key::f_sharp_minor);
-    BOOST_CHECK(
-        olv1::parse_musical_key("Bb") == djinterop::musical_key::b_flat_major);
-
-    // The typographic accidentals mean the same as the ASCII ones.
-    BOOST_CHECK(
-        olv1::parse_musical_key("F♯m") == djinterop::musical_key::f_sharp_minor);
-    BOOST_CHECK(
-        olv1::parse_musical_key("B♭") == djinterop::musical_key::b_flat_major);
-}
-
-BOOST_TEST_DECORATOR(
-    *utf::description("parse_musical_key() for notations it does not know"))
-BOOST_AUTO_TEST_CASE(parse_musical_key__unknown_notations__are_not_guessed)
-{
-    // Act / Assert
-    BOOST_CHECK(!olv1::parse_musical_key(""));
-    BOOST_CHECK(!olv1::parse_musical_key("H"));
-
-    // The Camelot and Open Key wheels are not read.
-    BOOST_CHECK(!olv1::parse_musical_key("8A"));
-    BOOST_CHECK(!olv1::parse_musical_key("Camelot 8A"));
+    // An empty column reads as absent on its own, too.
+    BOOST_CHECK(!content.get_comment(2));
+    BOOST_CHECK(!content.get_title(404));
 }

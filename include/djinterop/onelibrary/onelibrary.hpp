@@ -16,8 +16,6 @@
  */
 
 #pragma once
-#ifndef DJINTEROP_ONELIBRARY_ONELIBRARY_HPP
-#define DJINTEROP_ONELIBRARY_ONELIBRARY_HPP
 
 #include <string>
 
@@ -75,6 +73,21 @@ database DJINTEROP_PUBLIC load_database(
     const std::string& path,
     const std::string& passphrase = default_passphrase);
 
-}  // namespace djinterop::onelibrary
+/// Create a new database from an SQL script, and load it.
+///
+/// The directory indicated by `script_directory` is expected to contain a file
+/// named `exportLibrary.db.sql`, holding one statement per line.  It is used
+/// to hydrate an encrypted database at `database_relative_path` within
+/// `directory`, which is then loaded as `load_database` would load it.
+///
+/// \param directory Root directory of the device to create.
+/// \param script_directory Directory containing the script.
+/// \param passphrase Passphrase with which to encrypt the database.
+/// \return Returns the created database.
+/// \throws unsupported_database If this build of libdjinterop cannot write an
+///                              encrypted database.
+database DJINTEROP_PUBLIC create_database_from_scripts(
+    const std::string& directory, const std::string& script_directory,
+    const std::string& passphrase = default_passphrase);
 
-#endif  // DJINTEROP_ONELIBRARY_ONELIBRARY_HPP
+}  // namespace djinterop::onelibrary

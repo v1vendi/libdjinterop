@@ -16,8 +16,6 @@
  */
 
 #pragma once
-#ifndef DJINTEROP_ONELIBRARY_V1_PROPERTY_TABLE_HPP
-#define DJINTEROP_ONELIBRARY_V1_PROPERTY_TABLE_HPP
 
 #include <cstdint>
 #include <memory>
@@ -67,5 +65,3 @@ private:
 
 }  // namespace v1
 }  // namespace djinterop::onelibrary
-
-#endif  // DJINTEROP_ONELIBRARY_V1_PROPERTY_TABLE_HPP

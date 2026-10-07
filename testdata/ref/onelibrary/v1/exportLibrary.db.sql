@@ -1,5 +1,8 @@
 -- The schema a real OneLibrary export carries, abbreviated to the tables that
--- libdjinterop reads.
+-- libdjinterop reads.  The version is the one `property.dbVersion` records, as
+-- the `onelibrary::v1` namespace reads it.
+--
+-- Statements are one per line, as `create_database_from_scripts` reads them.
 --
 -- Nothing in a real export is declared NOT NULL, and no foreign key is
 -- enforced, so a fixture can leave any column unset.
@@ -27,3 +30,6 @@ CREATE TABLE playlist_content(playlist_id integer, content_id integer, sequenceN
 
 CREATE TABLE property(deviceName varchar, dbVersion varchar, numberOfContents integer, createdDate varchar, backGroundColorType integer, myTagMasterDBID integer);
 
+-- Every export carries exactly one `property` row, describing the device and
+-- the version of its schema, so an otherwise empty database carries it too.
+INSERT INTO property (dbVersion, numberOfContents) VALUES ('1000', 0);

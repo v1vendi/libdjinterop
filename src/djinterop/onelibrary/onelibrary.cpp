@@ -19,9 +19,11 @@
 
 #include <array>
 #include <filesystem>
+#include <fstream>
 #include <memory>
-#include <set>
 #include <string>
+#include <string_view>
+#include <unordered_set>
 #include <utility>
 
 #include <djinterop/exceptions.hpp>
@@ -66,19 +68,22 @@ void verify_schema(onelibrary_context& context)
 {
     // A real export has twenty-two tables; demanding the ones this library
     // does not read would reject a database that is merely older or newer.
-    constexpr std::array<const char*, 8> required_tables{
+    constexpr std::array<std::string_view, 8> required_tables{
         "content",  "artist",           "album",   "genre", "label",
         "playlist", "playlist_content", "property"};
 
-    std::set<std::string> present;
+    std::unordered_set<std::string> present;
     context.db << "SELECT name FROM sqlite_master WHERE type = 'table'" >>
         [&](std::string name) { present.insert(std::move(name)); };
 
     for (const auto& table : required_tables)
-        if (present.count(table) == 0)
+    {
+        std::string name{table};
+        if (present.count(name) == 0)
             throw database_inconsistency{
-                std::string{"The table `"} + table +
-                "` is missing, so this is not a OneLibrary database"};
+                "The table `" + name +
+                "` is missing, so this is not a valid OneLibrary database"};
+    }
 }
 
 std::shared_ptr<onelibrary_context> load_context(
@@ -105,10 +110,64 @@ bool database_exists(const std::string& path)
     return std::filesystem::exists(location.database_path);
 }
 
+std::shared_ptr<onelibrary_context> create_context_from_scripts(
+    const std::string& directory, const std::string& script_directory,
+    const std::string& passphrase)
+{
+    const auto script_path = script_directory + "/exportLibrary.db.sql";
+    std::ifstream script{script_path};
+    if (!script)
+        throw std::runtime_error{
+            "Cannot read the script `" + script_path + "`"};
+
+    const auto database_path = directory + "/" + database_relative_path;
+    if (std::filesystem::exists(database_path))
+        throw std::runtime_error{
+            "A database already exists at `" + database_path + "`"};
+
+    std::filesystem::create_directories(
+        std::filesystem::path{database_path}.parent_path());
+
+    {
+        auto db = util::create_encrypted_database(database_path, passphrase);
+
+        // One statement per line, as the Engine scripts are written, with
+        // blank lines and comments between them.
+        std::string statement;
+        while (std::getline(script, statement))
+        {
+            if (statement.empty() || statement.rfind("--", 0) == 0)
+                continue;
+
+            try
+            {
+                db << statement;
+            }
+            catch (const std::exception& e)
+            {
+                throw std::runtime_error{
+                    "Error in script `" + script_path +
+                    "` whilst executing line \"" + statement + "\": " +
+                    e.what()};
+            }
+        }
+    }
+
+    return load_context(directory, passphrase);
+}
+
 database load_database(const std::string& path, const std::string& passphrase)
 {
     return database{
         std::make_shared<v1::database_impl>(load_context(path, passphrase))};
+}
+
+database create_database_from_scripts(
+    const std::string& directory, const std::string& script_directory,
+    const std::string& passphrase)
+{
+    return database{std::make_shared<v1::database_impl>(
+        create_context_from_scripts(directory, script_directory, passphrase))};
 }
 
 }  // namespace djinterop::onelibrary

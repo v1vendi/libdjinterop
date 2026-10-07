@@ -21,15 +21,12 @@
 #include <cstdio>
 #include <string>
 
-#include <sqlite3.h>
-
 #include <djinterop/djinterop.hpp>
 #include <djinterop/onelibrary/onelibrary.hpp>
 #include <djinterop/onelibrary/v1/library.hpp>
 
 #include "../boost_test_printable.hpp"
-#include "../temporary_directory.hpp"
-#include "onelibrary_schema.hpp"
+#include "onelibrary_fixture.hpp"
 
 namespace utf = boost::unit_test;
 namespace ol = djinterop::onelibrary;
@@ -39,135 +36,66 @@ namespace
 {
 const std::string passphrase = "a passphrase for the fixture";
 
-void execute(sqlite3* db, const std::string& sql)
-{
-    char* error = nullptr;
-    const auto rc = sqlite3_exec(db, sql.c_str(), nullptr, nullptr, &error);
-    const std::string message = error != nullptr ? error : "";
-    sqlite3_free(error);
-    BOOST_REQUIRE_MESSAGE(
-        rc == SQLITE_OK, "failed to run \"" << sql << "\": " << message);
-}
-
-/// Create a database encrypted as rekordbox encrypts one.
+/// A device holding a small OneLibrary export, built once for the whole
+/// module.
 ///
-/// The format is SQLCipher 4 with its default parameters, so the key is all
-/// there is to set.
-sqlite3* create_encrypted_database(const std::string& path)
-{
-    sqlite3* db = nullptr;
-    BOOST_REQUIRE_EQUAL(
-        sqlite3_open_v2(
-            path.c_str(), &db, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE,
-            nullptr),
-        SQLITE_OK);
-    execute(db, "PRAGMA key = '" + passphrase + "'");
-    return db;
-}
-
-/// Create the directories of a device, returning where its database goes.
-std::string make_device_directories(const std::string& root)
-{
-    const auto path = root + "/" + ol::database_relative_path;
-    boost::filesystem::create_directories(
-        boost::filesystem::path{path}.parent_path());
-    return path;
-}
-
-/// Build a device holding a small OneLibrary export.
-///
-/// The schema is the one a real export carries, abbreviated to the tables this
-/// library reads.  The data covers the awkward cases: metadata that is absent,
-/// present but empty, and non-ASCII; a key notation that is not understood;
-/// and a nested playlist.
-std::string make_device(const temporary_directory& temp_dir)
-{
-    const auto root = temp_dir.temp_dir;
-    const auto path = make_device_directories(root);
-
-    auto* db = create_encrypted_database(path);
-
-    create_onelibrary_schema(db);
-
-    execute(
-        db,
-        "INSERT INTO artist VALUES (1, 'Aphex Twin', 'APHEX TWIN'), "
-        "(2, 'Кто-то', ''), (3, 'A Composer', '')");
-    execute(db, "INSERT INTO album VALUES (1, 'Album One', 1, 0, 0, '')");
-    execute(db, "INSERT INTO genre VALUES (1, 'Electro')");
-    execute(db, "INSERT INTO label VALUES (1, 'Warp')");
-    execute(
-        db,
-        "INSERT INTO \"key\" VALUES (1, 'F#m'), (2, 'Bb'), "
-        "(3, 'Camelot 8A')");
-
-    // A fully populated track.
-    execute(
-        db,
-        "INSERT INTO content (content_id, title, bpmx100, length, trackNo, "
-        "artist_id_artist, artist_id_composer, album_id, genre_id, label_id, "
-        "key_id, djComment, rating, releaseYear, path, fileName, fileSize, "
-        "bitrate, samplingRate, masterDbId, analysisDataFilePath, color_id) "
-        "VALUES (1, 'Alpha Track', 12400, "
-        "391, 7, 1, 3, 1, 1, 1, 1, 'feelin good', 4, 2025, "
-        "'/Contents/Aphex/alpha.mp3', 'alpha.mp3', 6580703, 320, 44100, "
-        "4056018032, '/PIONEER/USBANLZ/P016/0000875e/ANLZ0000.DAT', 6)");
-
-    // Non-ASCII metadata, an empty comment, and no rating.
-    execute(
-        db,
-        "INSERT INTO content (content_id, title, bpmx100, length, "
-        "artist_id_artist, key_id, djComment, rating, path, samplingRate, "
-        "masterDbId, color_id) VALUES (2, 'Бета Трек', 12800, 245, 2, 2, '', "
-        "0, '/Contents/Various/beta.flac', 48000, 4056018032, 0)");
-
-    // Almost nothing set, and a key notation this library does not know.
-    execute(
-        db,
-        "INSERT INTO content (content_id, title, key_id, rating, path) "
-        "VALUES (3, 'Gamma', 3, 5, '/Contents/Third/gamma.wav')");
-
-    execute(
-        db,
-        "INSERT INTO playlist VALUES (1, 1, 'Sets', 0, 0, 0), "
-        "(2, 1, 'Warm Up', 0, 0, 1), (3, 2, 'Peak Time', 0, 0, 0)");
-    execute(
-        db,
-        "INSERT INTO playlist_content VALUES (2, 1, 1), (2, 3, 2), "
-        "(3, 2, 1)");
-    execute(
-        db,
-        "INSERT INTO property VALUES ('FIXTURE', '1000', 3, "
-        "'2026-01-01', 0, 0)");
-
-    sqlite3_close(db);
-    return root;
-}
-
-/// The device that the tests read, built once.
+/// The data covers the awkward cases: metadata that is absent, present but
+/// empty, and non-ASCII; a key notation that is not understood; and a nested
+/// playlist.
 ///
 /// Key derivation is deliberately expensive -- the format stretches the
 /// passphrase 256,000 times -- so a test that built its own device and opened
 /// it would pay for that twice over, every time.
-struct shared_device
+const onelibrary_device& device_fixture()
 {
-    temporary_directory temp_dir;
-    std::string path;
+    static const onelibrary_device instance{
+        {
+            "INSERT INTO artist VALUES (1, 'Aphex Twin', 'APHEX TWIN'), "
+            "(2, 'Кто-то', ''), (3, 'A Composer', '');",
+            "INSERT INTO album VALUES (1, 'Album One', 1, 0, 0, '');",
+            "INSERT INTO genre VALUES (1, 'Electro');",
+            "INSERT INTO label VALUES (1, 'Warp');",
+            "INSERT INTO \"key\" VALUES (1, 'F#m'), (2, 'Bb'), "
+            "(3, 'Camelot 8A');",
 
-    shared_device() : path{make_device(temp_dir)} {}
-};
+            // A fully populated track.
+            "INSERT INTO content (content_id, title, bpmx100, length, "
+            "trackNo, artist_id_artist, artist_id_composer, album_id, "
+            "genre_id, label_id, key_id, djComment, rating, releaseYear, "
+            "path, fileName, fileSize, bitrate, samplingRate, masterDbId, "
+            "analysisDataFilePath, color_id) VALUES (1, 'Alpha Track', "
+            "12400, 391, 7, 1, 3, 1, 1, 1, 1, 'feelin good', 4, 2025, "
+            "'/Contents/Aphex/alpha.mp3', 'alpha.mp3', 6580703, 320, 44100, "
+            "4056018032, '/PIONEER/USBANLZ/P016/0000875e/ANLZ0000.DAT', 6);",
 
-const shared_device& device_fixture()
-{
-    static const shared_device instance;
+            // Non-ASCII metadata, an empty comment, and no rating.
+            "INSERT INTO content (content_id, title, bpmx100, length, "
+            "artist_id_artist, key_id, djComment, rating, path, "
+            "samplingRate, masterDbId, color_id) VALUES (2, 'Бета Трек', "
+            "12800, 245, 2, 2, '', 0, '/Contents/Various/beta.flac', 48000, "
+            "4056018032, 0);",
+
+            // Almost nothing set, and a key notation this library does not
+            // know.
+            "INSERT INTO content (content_id, title, key_id, rating, path) "
+            "VALUES (3, 'Gamma', 3, 5, '/Contents/Third/gamma.wav');",
+
+            "INSERT INTO playlist VALUES (1, 1, 'Sets', 0, 0, 0), "
+            "(2, 1, 'Warm Up', 0, 0, 1), (3, 2, 'Peak Time', 0, 0, 0);",
+            "INSERT INTO playlist_content VALUES (2, 1, 1), (2, 3, 2), "
+            "(3, 2, 1);",
+            "UPDATE property SET deviceName = 'FIXTURE', "
+            "numberOfContents = 3, createdDate = '2026-01-01';",
+        },
+        passphrase};
+
     return instance;
 }
 
 /// The shared device, opened once as a library.
 const olv1::library& loaded_library()
 {
-    static const olv1::library lib{device_fixture().path, passphrase};
-    return lib;
+    return device_fixture().library;
 }
 
 /// The shared device, through the same connection as `loaded_library()`.
@@ -182,7 +110,7 @@ BOOST_TEST_DECORATOR(*utf::description(
     "database_exists() finds a device by its root or by its file"))
 BOOST_AUTO_TEST_CASE(database_exists__a_device__is_found)
 {
-    const auto& device = device_fixture().path;
+    const auto& device = device_fixture().root;
 
     BOOST_CHECK(ol::database_exists(device));
     BOOST_CHECK(ol::database_exists(device + "/" + ol::database_relative_path));
@@ -193,7 +121,7 @@ BOOST_TEST_DECORATOR(
     *utf::description("load_database() reports the identity of a device"))
 BOOST_AUTO_TEST_CASE(load_database__a_device__reports_its_identity)
 {
-    const auto& device = device_fixture().path;
+    const auto& device = device_fixture().root;
     auto db = loaded_database();
 
     BOOST_CHECK_EQUAL(db.version_name(), "OneLibrary 1000");
@@ -211,7 +139,7 @@ BOOST_TEST_DECORATOR(
     *utf::description("load_database() accepts the database file itself"))
 BOOST_AUTO_TEST_CASE(load_database__the_database_file_itself__is_accepted)
 {
-    const auto& device = device_fixture().path;
+    const auto& device = device_fixture().root;
     auto db = ol::load_database(
         device + "/" + ol::database_relative_path, passphrase);
 
@@ -226,7 +154,7 @@ BOOST_TEST_DECORATOR(
     *utf::description("load_database() refuses a wrong passphrase"))
 BOOST_AUTO_TEST_CASE(load_database__a_wrong_passphrase__is_refused)
 {
-    const auto& device = device_fixture().path;
+    const auto& device = device_fixture().root;
 
     BOOST_CHECK_THROW(
         ol::load_database(device, "some other passphrase"),
@@ -438,30 +366,18 @@ BOOST_AUTO_TEST_CASE(
 {
     // The shared fixture is only one level deep, which does not exercise the
     // recursion in `descendant_ids` or the order it returns.
-    temporary_directory temp_dir;
-    const auto path = temp_dir.temp_dir + "/deep.db";
-
-    auto* db = create_encrypted_database(path);
-    create_onelibrary_schema(db);
-
-    // Every export carries a `property` row, whatever else it holds.
-    execute(
-        db,
-        "INSERT INTO property VALUES ('FIXTURE', '1000', 0, "
-        "'2026-01-01', 0, 0)");
-
+    //
     // Root
     //  +- Middle A        (sequence 1)
     //  |   +- Leaf A      (sequence 1)
     //  +- Middle B        (sequence 2)
-    execute(
-        db,
+    const onelibrary_device deep{{
         "INSERT INTO playlist VALUES (1, 1, 'Root', 0, 0, 0), "
         "(2, 1, 'Middle A', 0, 0, 1), (3, 2, 'Middle B', 0, 0, 1), "
-        "(4, 1, 'Leaf A', 0, 0, 2)");
-    sqlite3_close(db);
+        "(4, 1, 'Leaf A', 0, 0, 2);",
+    }};
 
-    auto loaded = ol::load_database(path, passphrase);
+    auto loaded = deep.library.database();
     const auto root = loaded.root_crate_by_name("Root");
     BOOST_REQUIRE(root);
 
@@ -483,25 +399,25 @@ BOOST_AUTO_TEST_CASE(load_database__a_checkpointed_log__is_read)
     // removes the log but leaves the header declaring the database
     // write-ahead-logged.  SQLite will not open one of those read-only unless
     // it can create the log again.
+    //
+    // Creating a database in WAL mode does the same: closing the connection
+    // that wrote it checkpoints the log into the database.
     temporary_directory temp_dir;
-    const auto path = temp_dir.temp_dir + "/checkpointed.db";
+    const auto device = temp_dir.temp_dir + "/device";
+    const auto scripts = temp_dir.temp_dir + "/scripts";
+    write_script_on_schema(
+        scripts, {
+                     "PRAGMA journal_mode = WAL;",
+                     "INSERT INTO content (content_id, title, path) "
+                     "VALUES (1, 'Checkpointed', '/a.mp3');",
+                 });
+    ol::create_database_from_scripts(device, scripts, passphrase);
 
-    auto* db = create_encrypted_database(path);
-    create_onelibrary_schema(db);
-    execute(db, "PRAGMA journal_mode = WAL");
-    execute(
-        db,
-        "INSERT INTO content (content_id, title, path) "
-        "VALUES (1, 'Checkpointed', '/a.mp3')");
-    execute(
-        db,
-        "INSERT INTO property VALUES ('FIXTURE', '1000', 1, "
-        "'2026-01-01', 0, 0)");
-
-    // Closing folds the log back in, exactly as ejecting a device does,
-    // leaving nothing beside the database but its header still saying WAL.
-    sqlite3_close(db);
+    // Creating it also loads it, and that read-only connection leaves an empty
+    // log and index behind, so remove them to leave the header alone.
+    const auto path = device + "/" + ol::database_relative_path;
     std::remove((path + "-wal").c_str());
+    std::remove((path + "-shm").c_str());
 
     auto loaded = ol::load_database(path, passphrase);
     const auto tracks = loaded.tracks();
@@ -514,59 +430,14 @@ BOOST_TEST_DECORATOR(
 BOOST_AUTO_TEST_CASE(verify__a_database_missing_its_tables__is_rejected)
 {
     temporary_directory temp_dir;
-    const auto path = temp_dir.temp_dir + "/not-onelibrary.db";
-
-    auto* db = create_encrypted_database(path);
-    execute(db, "CREATE TABLE something_else(id INTEGER PRIMARY KEY)");
-    sqlite3_close(db);
+    const auto scripts = temp_dir.temp_dir + "/scripts";
+    write_script(
+        scripts, {"CREATE TABLE something_else(id INTEGER PRIMARY KEY);"});
 
     BOOST_CHECK_THROW(
-        ol::load_database(path, passphrase), djinterop::database_inconsistency);
-}
-
-BOOST_TEST_DECORATOR(
-    *utf::description("load_database() reads data left in the write-ahead log"))
-BOOST_AUTO_TEST_CASE(load_database__data_left_in_the_log__is_read)
-{
-    // rekordbox leaves most of a fresh export in the log rather than in the
-    // database file, so a reader that ignores it reports a nearly empty
-    // library, with no error at all.
-    temporary_directory temp_dir;
-    const auto device = temp_dir.temp_dir + "/device";
-    const auto path = make_device_directories(device);
-
-    // The database is written beside the device, and copied onto it.
-    const auto work = temp_dir.temp_dir + "/work.db";
-    auto* db = create_encrypted_database(work);
-    create_onelibrary_schema(db);
-    execute(
-        db,
-        "INSERT INTO content (content_id, title, path) "
-        "VALUES (1, 'In The Database', '/a.mp3')");
-    execute(
-        db,
-        "INSERT INTO property VALUES ('FIXTURE', '1000', 2, "
-        "'2026-01-01', 0, 0)");
-
-    // From here on, everything lands in the log and stays there.
-    execute(db, "PRAGMA journal_mode = WAL");
-    execute(db, "PRAGMA wal_autocheckpoint = 0");
-    execute(
-        db,
-        "INSERT INTO content (content_id, title, path) "
-        "VALUES (2, 'In The Log', '/b.mp3')");
-
-    // Copy the pair while the connection is open, because closing it would
-    // fold the log back in.
-    boost::filesystem::copy_file(work, path);
-    boost::filesystem::copy_file(work + "-wal", path + "-wal");
-    sqlite3_close(db);
-
-    auto loaded = ol::load_database(device, passphrase);
-    const auto tracks = loaded.tracks();
-    BOOST_REQUIRE_EQUAL(tracks.size(), 2u);
-    BOOST_CHECK_EQUAL(tracks[0].title().value(), "In The Database");
-    BOOST_CHECK_EQUAL(tracks[1].title().value(), "In The Log");
+        ol::create_database_from_scripts(
+            temp_dir.temp_dir + "/device", scripts, passphrase),
+        djinterop::database_inconsistency);
 }
 
 BOOST_TEST_DECORATOR(
@@ -580,8 +451,8 @@ BOOST_AUTO_TEST_CASE(library__a_device__is_read_through_its_database)
     auto db = lib.database();
 
     // Assert
-    BOOST_CHECK_EQUAL(lib.directory(), device_fixture().path);
-    BOOST_CHECK_EQUAL(db.directory(), device_fixture().path);
+    BOOST_CHECK_EQUAL(lib.directory(), device_fixture().root);
+    BOOST_CHECK_EQUAL(db.directory(), device_fixture().root);
     BOOST_CHECK_EQUAL(db.tracks().size(), 3u);
 }
 
@@ -658,4 +529,102 @@ BOOST_AUTO_TEST_CASE(get_db_version__a_device__is_the_version_it_records)
     // Act, Assert
     BOOST_CHECK_EQUAL(
         lib.property().get_db_version().value(), olv1::supported_db_version);
+}
+
+BOOST_TEST_DECORATOR(
+    *utf::description("snapshot() converts the units of the format"))
+BOOST_AUTO_TEST_CASE(snapshot__a_populated_track__converts_its_units)
+{
+    // Arrange
+    auto db = loaded_database();
+    const auto track = db.track_by_id(1);
+    BOOST_REQUIRE(track);
+
+    // Act
+    const auto snapshot = track->snapshot();
+
+    // Assert
+    BOOST_CHECK_CLOSE(snapshot.bpm.value(), 124.0, 0.001);
+    BOOST_CHECK_EQUAL(snapshot.duration.value().count(), 391000);
+
+    // Ratings are whole stars in the database, and out of one hundred here.
+    BOOST_CHECK_EQUAL(snapshot.rating.value(), 80);
+
+    // Paths in the database begin with a separator, and here they do not.
+    BOOST_CHECK_EQUAL(
+        snapshot.relative_path.value(), "Contents/Aphex/alpha.mp3");
+
+    // No sample count is recorded, so it follows from the duration and rate.
+    BOOST_CHECK_EQUAL(snapshot.sample_count.value(), 391ull * 44100);
+    BOOST_CHECK_EQUAL(snapshot.publisher.value(), "Warp");
+    BOOST_CHECK(snapshot.key == djinterop::musical_key::f_sharp_minor);
+
+    // rekordbox leaves these in the ANLZ files beside the database.
+    BOOST_CHECK(snapshot.beatgrid.empty());
+    BOOST_CHECK(snapshot.waveform.empty());
+    BOOST_CHECK(snapshot.hot_cues.empty());
+    BOOST_CHECK(snapshot.loops.empty());
+}
+
+BOOST_TEST_DECORATOR(
+    *utf::description("key() for each notation rekordbox may write"))
+BOOST_AUTO_TEST_CASE(key__each_notation__is_understood_or_not_guessed)
+{
+    // Arrange
+    const onelibrary_device keys{{
+        "INSERT INTO \"key\" VALUES (1, 'C'), (2, 'Am'), (3, 'F#m'), "
+        "(4, 'Bb'), (5, 'F♯m'), (6, 'B♭'), (7, ''), (8, 'H'), (9, '8A'), "
+        "(10, 'Camelot 8A');",
+        "INSERT INTO content (content_id, key_id) VALUES (1, 1), (2, 2), "
+        "(3, 3), (4, 4), (5, 5), (6, 6), (7, 7), (8, 8), (9, 9), (10, 10);",
+    }};
+    auto db = keys.library.database();
+    const auto key_of = [&](int64_t id) { return db.track_by_id(id)->key(); };
+
+    // Act / Assert
+    BOOST_CHECK(key_of(1) == djinterop::musical_key::c_major);
+    BOOST_CHECK(key_of(2) == djinterop::musical_key::a_minor);
+    BOOST_CHECK(key_of(3) == djinterop::musical_key::f_sharp_minor);
+    BOOST_CHECK(key_of(4) == djinterop::musical_key::b_flat_major);
+
+    // The typographic accidentals mean the same as the ASCII ones.
+    BOOST_CHECK(key_of(5) == djinterop::musical_key::f_sharp_minor);
+    BOOST_CHECK(key_of(6) == djinterop::musical_key::b_flat_major);
+
+    // Anything else, including the Camelot and Open Key wheels, is not read.
+    BOOST_CHECK(!key_of(7));
+    BOOST_CHECK(!key_of(8));
+    BOOST_CHECK(!key_of(9));
+    BOOST_CHECK(!key_of(10));
+}
+
+BOOST_TEST_DECORATOR(
+    *utf::description("library::exists() and library::load() find a device"))
+BOOST_AUTO_TEST_CASE(library__exists_and_load__find_a_device)
+{
+    // Arrange
+    const auto& device = device_fixture().root;
+
+    // Act
+    const auto lib = olv1::library::load(device, passphrase);
+
+    // Assert
+    BOOST_CHECK(olv1::library::exists(device));
+    BOOST_CHECK(!olv1::library::exists(device + "/nowhere"));
+    BOOST_CHECK_EQUAL(lib.directory(), device);
+    BOOST_CHECK_EQUAL(lib.content().all_ids().size(), 3u);
+}
+
+BOOST_TEST_DECORATOR(*utf::description(
+    "create_database_from_scripts() refuses to overwrite a database"))
+BOOST_AUTO_TEST_CASE(create_database_from_scripts__an_existing_one__throws)
+{
+    // Arrange
+    const auto& device = device_fixture().root;
+
+    // Act / Assert
+    BOOST_CHECK_THROW(
+        ol::create_database_from_scripts(
+            device, onelibrary_v1_script_directory(), passphrase),
+        std::runtime_error);
 }

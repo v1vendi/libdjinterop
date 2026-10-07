@@ -17,13 +17,34 @@
 
 #include <djinterop/onelibrary/v1/library.hpp>
 
+#include <utility>
+
 #include "../onelibrary_context.hpp"
 #include "database_impl.hpp"
+
 namespace djinterop::onelibrary::v1
 {
-library::library(const std::string& path, const std::string& passphrase) :
-    context_{load_context(path, passphrase)}
+library::library(std::shared_ptr<onelibrary_context> context) :
+    context_{std::move(context)}
 {
+}
+
+bool library::exists(const std::string& path)
+{
+    return database_exists(path);
+}
+
+library library::load(const std::string& path, const std::string& passphrase)
+{
+    return library{load_context(path, passphrase)};
+}
+
+library library::create_from_scripts(
+    const std::string& directory, const std::string& script_directory,
+    const std::string& passphrase)
+{
+    return library{
+        create_context_from_scripts(directory, script_directory, passphrase)};
 }
 
 content_table library::content() const

@@ -38,10 +38,10 @@ constexpr const char* find_root_by_name =
     "WHERE (playlist_id_parent IS NULL OR playlist_id_parent = 0) "
     "AND name = ? ORDER BY sequenceNo, playlist_id LIMIT 1";
 
-/// A parent identifier of zero means the same as none.
+/// A parent identifier of `PARENT_ID_NONE` means the same as none.
 std::optional<int64_t> normalise_parent(std::optional<int64_t> parent_id)
 {
-    if (!parent_id.has_value() || *parent_id == 0)
+    if (!parent_id.has_value() || *parent_id == PARENT_ID_NONE)
         return std::nullopt;
 
     return parent_id;
@@ -98,6 +98,10 @@ std::vector<int64_t> playlist_table::descendant_ids(int64_t id) const
 {
     // One recursive query rather than one per node.  `depth` keeps the result
     // breadth first, and `sequenceNo` keeps siblings in their own order.
+    //
+    // Nothing in the schema stops a playlist from being its own ancestor, so
+    // the recursion stops once it is deeper than the table has rows, which no
+    // well-formed tree can be.
     return util::collect_ids(
         context_->db,
         "WITH RECURSIVE descendant(playlist_id, sequenceNo, depth) AS ("
@@ -106,7 +110,8 @@ std::vector<int64_t> playlist_table::descendant_ids(int64_t id) const
         "UNION ALL "
         "SELECT p.playlist_id, p.sequenceNo, descendant.depth + 1 "
         "FROM playlist AS p "
-        "JOIN descendant ON p.playlist_id_parent = descendant.playlist_id) "
+        "JOIN descendant ON p.playlist_id_parent = descendant.playlist_id "
+        "WHERE descendant.depth < (SELECT COUNT(*) FROM playlist)) "
         "SELECT playlist_id FROM descendant "
         "ORDER BY depth, sequenceNo, playlist_id",
         id);

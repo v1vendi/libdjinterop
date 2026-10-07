@@ -51,6 +51,14 @@ struct onelibrary_context
 std::shared_ptr<onelibrary_context> load_context(
     const std::string& path, const std::string& passphrase);
 
+/// Create a database on a device from a script, and open it.
+///
+/// \param directory Root directory of the device.
+/// \param script_directory Directory holding `exportLibrary.db.sql`.
+std::shared_ptr<onelibrary_context> create_context_from_scripts(
+    const std::string& directory, const std::string& script_directory,
+    const std::string& passphrase);
+
 /// Check that a database holds the tables of a OneLibrary one.
 ///
 /// \throws database_inconsistency If a table is missing.

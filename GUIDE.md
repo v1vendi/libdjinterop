@@ -115,15 +115,10 @@ aspects of the format are worth noting:
 
 The low-level API is in `<djinterop/onelibrary/v1/library.hpp>`, and exposes
 the tables as the device holds them, translating no further than resolving a
-lookup reference to the text behind it.  A device is loaded as an
-`onelibrary::v1::library`, whose `content()`, `playlist()` and `property()`
-give the tables, and whose `database()` gives the same database that
-`load_database()` would have.
+lookup reference to the text behind it.  A device is loaded as a
+`onelibrary::v1::library`.
 
-The `v1` is the schema those tables describe.  A device records it as
-`property.dbVersion`, and every export seen so far reports `1000`.  A schema
-not compatible with this one gets a namespace of its own, as the Engine
-formats do.
+The `v1` is the schema those tables describe.
 
 
 Stable API/ABI

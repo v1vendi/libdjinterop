@@ -16,8 +16,6 @@
  */
 
 #pragma once
-#ifndef DJINTEROP_ONELIBRARY_V1_CONTENT_TABLE_HPP
-#define DJINTEROP_ONELIBRARY_V1_CONTENT_TABLE_HPP
 
 #include <chrono>
 #include <cstdint>
@@ -81,15 +79,19 @@ struct content_row
     std::optional<int64_t> track_number;
     std::optional<int64_t> release_year;
 
-    /// Rating in whole stars, from zero to five.
+    /// Rating as a number of whole stars, which is any integer from zero
+    /// (unrated) to five inclusive.
     ///
-    /// This is not the 0-255 encoding the rest of the rekordbox ecosystem
-    /// uses, whose only values are 0, 51, 102, 153, 204 and 255.  A real
-    /// export holds a 5, which that encoding cannot express.
+    /// Note that this differs from other parts of the rekordbox ecosystem,
+    /// which encode the same rating on a scale of 0 to 255 in steps of 51.
     std::optional<int64_t> rating_stars;
 
-    /// POSIX path, absolute within the device and so beginning with a
-    /// separator, such as `/Contents/Artist/Album/Track.mp3`.
+    /// Path of the audio file, relative to the root of the device.
+    ///
+    /// The device is the drive, or the directory standing in for one, at whose
+    /// top level the `PIONEER` directory sits.  The path uses `/` as its
+    /// separator and, despite being relative to the device root, always begins
+    /// with one, such as `/Contents/Artist/Album/Track.mp3`.
     std::optional<std::string> path;
 
     /// Size of the file, in bytes.
@@ -135,8 +137,9 @@ public:
 
     /// Fetch the identifiers of rows whose path matches, ordered.
     ///
-    /// Paths in the database are absolute within the device and begin with a
-    /// separator; a path given without one is matched as though it had one.
+    /// Paths in the database are relative to the root of the device and begin
+    /// with a separator; a path given without one is matched as though it had
+    /// one.
     [[nodiscard]] std::vector<int64_t> ids_by_path(
         const std::string& path) const;
 
@@ -178,5 +181,3 @@ private:
 
 }  // namespace v1
 }  // namespace djinterop::onelibrary
-
-#endif  // DJINTEROP_ONELIBRARY_V1_CONTENT_TABLE_HPP

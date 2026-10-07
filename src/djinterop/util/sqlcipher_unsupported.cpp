@@ -29,4 +29,12 @@ sqlite::database open_encrypted_database(
         path + "`, as it was built without EXPERIMENTAL_ENABLE_SQLCIPHER"};
 }
 
+sqlite::database create_encrypted_database(
+    const std::string& path, const std::string&)
+{
+    throw unsupported_database{
+        "This build of libdjinterop cannot create the encrypted database `" +
+        path + "`, as it was built without EXPERIMENTAL_ENABLE_SQLCIPHER"};
+}
+
 }  // namespace djinterop::util
