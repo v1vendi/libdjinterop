@@ -46,3 +46,8 @@ endif()
 
 # Must be position-independent to link into a shared library.
 set_target_properties(sqlcipher PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+# Keep SQLite's symbols inside a shared libdjinterop.  An application that
+# links its own SQLite would otherwise interpose its copy, which cannot
+# decrypt, on the calls libdjinterop makes.
+set_target_properties(sqlcipher PROPERTIES C_VISIBILITY_PRESET hidden)
